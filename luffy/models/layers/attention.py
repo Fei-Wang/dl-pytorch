@@ -17,7 +17,7 @@ class MultiHeadAttention(nn.Module):
         inner_dim = dim_head * heads
         self.to_qkv = nn.Linear(dim, inner_dim * 3, bias=False)
         self.dropout = nn.Dropout(dropout)
-        self.to_out = nn.Linear(inner_dim, dim)
+        self.to_out = nn.Sequential(nn.Linear(inner_dim, dim), nn.Dropout(dropout))
 
     def forward(self, x, mask=None):
         q, k, v = self.to_qkv(x).chunk(3, dim=-1)

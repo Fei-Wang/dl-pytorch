@@ -105,6 +105,11 @@ def _get_repeats(beta):
 
 
 class EfficientNet(nn.Module):
+    """EfficientNet.
+
+        A PyTorch implement of : `EfficientNet: Rethinking Model Scaling for Convolutional Neural Networks
+        <https://arxiv.org/abs/1905.11946>`_"""
+
     # B0(input_size 224*224 width->alpha=1.2, depth->beta=1.1, resolution->gamma=1.15)
     def __init__(self, alpha=1.2, beta=1.1, num_classes=1000, dropout=0.2, use_se=True, se_ratio=0.25, act_module=None,
                  bn_momentum=_BN_MOMENTUM):

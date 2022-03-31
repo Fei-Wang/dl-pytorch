@@ -10,6 +10,11 @@ __all__ = ['ViTB16', 'ViTB32', 'ViTL16', 'ViTL32']
 
 
 class ViT(nn.Module):
+    """Vision Transformer.
+
+        A PyTorch implement of : `An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale
+        <https://arxiv.org/abs/2010.11929>`_"""
+
     def __init__(self, *, image_size, channels=3, patch_size, dim, emb_dropout=0., depth, num_heads, dim_head=None,
                  mlp_dim, dropout=0., num_classes, pool='cls'):
         super().__init__()

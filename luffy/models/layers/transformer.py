@@ -14,12 +14,10 @@ class Transformer(nn.Module):
             self.layers.append(nn.ModuleList([
                 nn.Sequential(
                     nn.LayerNorm(dim),
-                    MultiHeadAttention(dim, heads=heads, dim_head=dim_head, dropout=dropout),
-                    nn.Dropout(dropout)),
+                    MultiHeadAttention(dim, heads=heads, dim_head=dim_head, dropout=dropout)),
                 nn.Sequential(
                     nn.LayerNorm(dim),
-                    FFNN(dim, dim, mlp_dim, dropout=dropout),
-                    nn.Dropout(dropout))]))
+                    FFNN(dim, dim, mlp_dim, dropout=dropout))]))
 
     def forward(self, x):
         for attn, ff in self.layers:
