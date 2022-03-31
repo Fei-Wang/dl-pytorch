@@ -7,6 +7,9 @@ import torch.nn.functional as F
 # Paper suggests 0.99 momentum, for TensorFlow. Equivalent PyTorch momentum is (1.0 - tensorflow).
 _BN_MOMENTUM = 1 - 0.99
 
+__all__ = ['EfficientNetB0', 'EfficientNetB1', 'EfficientNetB2', 'EfficientNetB3', 'EfficientNetB4', 'EfficientNetB5',
+           'EfficientNetB6', 'EfficientNetB7', 'EfficientNetB8', 'EfficientNetL2']
+
 
 class Swish(nn.Module):
     def __init__(self, use_hard=False):
