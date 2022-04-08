@@ -1,25 +1,14 @@
 import math
 
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
+
+from .layers import Swish
 
 # Paper suggests 0.99 momentum, for TensorFlow. Equivalent PyTorch momentum is (1.0 - tensorflow).
 _BN_MOMENTUM = 1 - 0.99
 
 __all__ = ['EfficientNetB0', 'EfficientNetB1', 'EfficientNetB2', 'EfficientNetB3', 'EfficientNetB4', 'EfficientNetB5',
            'EfficientNetB6', 'EfficientNetB7', 'EfficientNetB8', 'EfficientNetL2']
-
-
-class Swish(nn.Module):
-    def __init__(self, use_hard=False):
-        super(Swish, self).__init__()
-        self.use_hard = use_hard
-
-    def forward(self, x):
-        if self.use_hard:
-            return x * F.relu6(x + 3, inplace=True) / 6
-        return x * torch.sigmoid(x)
 
 
 class SEBlock(nn.Module):

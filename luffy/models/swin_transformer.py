@@ -20,7 +20,7 @@ class BasicLayer(nn.Module):
             SwinTransformerBlock(dim=dim, input_resolution=input_resolution,
                                  num_heads=num_head, window_size=window_size,
                                  shift_size=0 if (i % 2 == 0) else window_size // 2,
-                                 mlp_ratio=mlp_ratio,
+                                 mlp_dim=dim * mlp_ratio,
                                  drop=drop, attn_drop=attn_drop)
             for i in range(depth)])
 

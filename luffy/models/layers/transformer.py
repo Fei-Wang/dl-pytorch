@@ -2,10 +2,11 @@ import torch
 from einops import rearrange
 from torch import nn
 
-from .attention import Attention, WindowAttention
+from .activation import SwiGLU
+from .attention import Attention, WindowAttention, MultiQueryAttention
 from .mlp import MLP
 
-__all__ = ['TransformerBlock', 'SwinTransformerBlock']
+__all__ = ['TransformerBlock', 'ParallelTransformerBlock', 'SwinTransformerBlock']
 
 
 class TransformerBlock(nn.Module):
@@ -25,8 +26,24 @@ class TransformerBlock(nn.Module):
         return x
 
 
+class ParallelTransformerBlock(nn.Module):
+    def __init__(self, dim, num_heads, mlp_dim, drop=0., attn_drop=0., act_layer=SwiGLU):
+        super().__init__()
+        self.attn = nn.Sequential(
+            nn.LayerNorm(dim),
+            MultiQueryAttention(dim, num_heads=num_heads, drop=attn_drop))
+        self.mlp = nn.Sequential(
+            nn.LayerNorm(dim),
+            MLP(dim, mlp_dim, drop=drop))
+
+    def forward(self, x):
+        x = self.mlp(x) + self.attn(x) + x
+
+        return x
+
+
 class SwinTransformerBlock(nn.Module):
-    def __init__(self, dim, input_resolution, num_heads, window_size=7, shift_size=0, mlp_ratio=4., drop=0.,
+    def __init__(self, *, dim, input_resolution, num_heads, window_size=7, shift_size=0, mlp_dim, drop=0.,
                  attn_drop=0.):
         super().__init__()
         self.input_resolution = input_resolution
@@ -44,7 +61,6 @@ class SwinTransformerBlock(nn.Module):
         attn_mask = self.get_attn_mask(self.input_resolution, self.window_size, self.shift_size)
         self.register_buffer("attn_mask", attn_mask)
 
-        mlp_dim = int(dim * mlp_ratio)
         self.mlp = nn.Sequential(nn.LayerNorm(dim), MLP(dim, mlp_dim, drop=drop))
 
     @staticmethod
