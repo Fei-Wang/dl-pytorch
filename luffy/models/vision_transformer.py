@@ -1,22 +1,22 @@
 import torch
-import torch.nn as nn
 from einops import repeat
 from einops.layers.torch import Rearrange
+from torch import nn
 from torch.nn.modules.utils import _pair
 
-from .layers import Transformer
+from .layers import TransformerBlock
 
 __all__ = ['ViTB16', 'ViTB32', 'ViTL16', 'ViTL32']
 
 
-class ViT(nn.Module):
+class VisionTransformer(nn.Module):
     """Vision Transformer.
 
         A PyTorch implement of : `An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale
         <https://arxiv.org/abs/2010.11929>`_"""
 
-    def __init__(self, *, image_size, channels=3, patch_size, dim, emb_dropout=0., depth, num_heads, dim_head=None,
-                 mlp_dim, dropout=0., num_classes, pool='cls'):
+    def __init__(self, *, image_size, channels=3, patch_size, dim, depth, num_heads, mlp_dim, drop=0., attn_drop=0.,
+                 num_classes, pool='cls'):
         super().__init__()
         image_height, image_width = _pair(image_size)
         patch_height, patch_width = _pair(patch_size)
@@ -34,9 +34,10 @@ class ViT(nn.Module):
 
         self.pos_embedding = nn.Parameter(torch.randn(1, seq_length + 1, dim))
         self.cls_token = nn.Parameter(torch.zeros(1, 1, dim))
-        self.dropout = nn.Dropout(emb_dropout)
+        self.drop = nn.Dropout(drop)
 
-        self.transformer = Transformer(dim, depth, num_heads, dim_head, mlp_dim, dropout)
+        self.blocks = nn.ModuleList(
+            [TransformerBlock(dim, num_heads, mlp_dim, drop, attn_drop) for _ in range(depth)])
 
         self.pool = pool
 
@@ -46,13 +47,13 @@ class ViT(nn.Module):
         x = self.to_patch_embedding(img)
         b, n, _ = x.shape
 
-        cls_tokens = repeat(self.cls_token, '() n d -> b n d', b=b)
+        cls_tokens = repeat(self.cls_token, '1 n d -> b n d', b=b)
         x = torch.cat((cls_tokens, x), dim=1)
         x += self.pos_embedding[:, :(n + 1)]
-        x = self.dropout(x)
+        x = self.drop(x)
 
-        x = self.transformer(x)
-
+        for blk in self.blocks:
+            x = blk(x)
         x = x.mean(dim=1) if self.pool == 'mean' else x[:, 0]
 
         return self.mlp_head(x)
@@ -68,21 +69,21 @@ def vit_params(model_name):
     return params_dict[model_name]
 
 
-class ViTB16(ViT):
+class ViTB16(VisionTransformer):
     def __init__(self, **kwargs):
         super().__init__(**{**vit_params('vit-b16'), **kwargs})
 
 
-class ViTB32(ViT):
+class ViTB32(VisionTransformer):
     def __init__(self, **kwargs):
         super().__init__(**{**vit_params('vit-b32'), **kwargs})
 
 
-class ViTL16(ViT):
+class ViTL16(VisionTransformer):
     def __init__(self, **kwargs):
         super().__init__(**{**vit_params('vit-l16'), **kwargs})
 
 
-class ViTL32(ViT):
+class ViTL32(VisionTransformer):
     def __init__(self, **kwargs):
         super().__init__(**{**vit_params('vit-l32'), **kwargs})

@@ -1,9 +1,9 @@
 import torch
 
-from luffy.models.efficientnet import EfficientNetB0
+from luffy.models.efficientnet import *
 
 
-def test_efficientnet():
+def test_efficientnet_b0():
     model = EfficientNetB0()
 
     images = torch.randn(1, 3, 224, 224)

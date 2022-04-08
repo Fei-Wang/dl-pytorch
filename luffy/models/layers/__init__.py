@@ -1,3 +1,3 @@
 from .attention import *
-from .ffnn import *
+from .mlp import *
 from .transformer import *

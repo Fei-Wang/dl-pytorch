@@ -1,10 +1,10 @@
 import torch
 
-from luffy.models.vit import ViTB16
+from luffy.models.swin_transformer import *
 
 
-def test_vit():
-    model = ViTB16(image_size=224, num_classes=1000)
+def test_swin_t():
+    model = SwinT(image_size=224, num_classes=1000)
 
     images = torch.randn(1, 3, 224, 224)
     feat = model(images)
