@@ -12,10 +12,6 @@ class BasicLayer(nn.Module):
     def __init__(self, dim, input_resolution, depth, num_head, window_size, mlp_ratio=4., drop=0., attn_drop=0.,
                  patch_merging=False):
         super().__init__()
-        self.dim = dim
-        self.input_resolution = input_resolution
-        self.depth = depth
-
         self.blocks = nn.ModuleList([
             SwinTransformerBlock(dim=dim, input_resolution=input_resolution,
                                  num_heads=num_head, window_size=window_size,

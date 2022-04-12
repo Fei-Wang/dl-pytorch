@@ -1,9 +1,12 @@
 import torch
+import torch.nn.functional as F
 from einops import rearrange
 from torch import nn, einsum
 from torch.nn.modules.utils import _pair
 
-__all__ = ['Attention', 'WindowAttention', 'MultiQueryAttention']
+from .mlp import MLP
+
+__all__ = ['Attention', 'WindowAttention', 'WindowAttentionV2', 'MultiQueryAttention']
 
 
 class Attention(nn.Module):
@@ -76,6 +79,51 @@ class WindowAttention(nn.Module):
 
         relative_position_bias = self.relative_position_bias_table[self.relative_position_index]
         relative_position_bias = rearrange(relative_position_bias, '(ws1 ws2) n-> 1 n ws1 ws2', ws1=self.ws)
+        sim = sim + relative_position_bias
+        if mask is not None:
+            sim = rearrange(sim, '(b nw) nh n1 n2 -> b nw nh n1 n2', nw=mask.shape[0])
+            mask = rearrange(mask, 'nw ws1 ws2 -> 1 nw 1 ws1 ws2')
+            sim = sim + mask
+            sim = rearrange(sim, 'b nw nh n1 n2 -> (b nw) nh n1 n2')
+
+        attn = sim.softmax(dim=-1)
+        attn = self.drop(attn)
+
+        out = einsum('b h i j, b h j d -> b h i d', attn, v)
+        out = rearrange(out, 'b nh n d -> b n (nh d)')
+        return self.to_out(out)
+
+
+class WindowAttentionV2(nn.Module):
+    def __init__(self, dim, window_size, num_heads, dim_head=None, drop=0., meta_hidden_dim=384):
+        super().__init__()
+        super().__init__()
+        dim_head = dim_head or dim // num_heads
+        wh, ww = _pair(window_size)
+        self.num_heads = num_heads
+        self.scale = dim_head ** -0.5
+        inner_dim = dim_head * num_heads
+        self.to_qkv = nn.Linear(dim, inner_dim * 3, bias=False)
+        self.drop = nn.Dropout(drop)
+        self.to_out = nn.Sequential(nn.Linear(inner_dim, dim), nn.Dropout(drop))
+
+        # meta network for positional encodings
+        self.meta_mlp = MLP(2, meta_hidden_dim, num_heads)
+        self.register_parameter("tau", torch.nn.Parameter(torch.ones((1, num_heads, 1, 1))))
+        coordinates = torch.cartesian_prod(torch.arange(wh), torch.arange(ww))
+        relative_coordinates = coordinates[:, None, :] - coordinates[None, :, :]
+        relative_coordinates_log = torch.sign(relative_coordinates) * torch.log(1.0 + relative_coordinates.abs())
+        self.register_buffer("relative_coordinates_log", relative_coordinates_log, persistent=False)
+
+    def forward(self, x, mask=None):
+        q, k, v = self.to_qkv(x).chunk(3, dim=-1)
+        q, k, v = map(lambda t: rearrange(t, 'b n (nh d) -> b nh n d', nh=self.num_heads), (q, k, v))
+        # compute attention map with scaled cosine attention
+        q, k = F.normalize(q, dim=-1), F.normalize(k, dim=-1)
+        sim = einsum('b h i d, b h j d -> b h i j', q, k)
+        sim = sim * self.tau
+        relative_position_bias = self.meta_mlp(self.relative_coordinates_log)
+        relative_position_bias = rearrange(relative_position_bias, 'ws1 ws2 nh->1 nh ws1 ws2')
         sim = sim + relative_position_bias
         if mask is not None:
             sim = rearrange(sim, '(b nw) nh n1 n2 -> b nw nh n1 n2', nw=mask.shape[0])
