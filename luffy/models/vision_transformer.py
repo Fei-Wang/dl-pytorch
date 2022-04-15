@@ -16,7 +16,7 @@ class VisionTransformer(nn.Module):
         <https://arxiv.org/abs/2010.11929>`_"""
 
     def __init__(self, *, image_size, channels=3, patch_size, dim, depth, num_heads, mlp_dim, drop=0., attn_drop=0.,
-                 num_classes, pool='cls'):
+                 num_classes, pool='cls', **kwargs):
         super().__init__()
         image_height, image_width = _pair(image_size)
         patch_height, patch_width = _pair(patch_size)

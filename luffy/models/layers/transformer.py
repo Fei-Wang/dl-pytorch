@@ -3,10 +3,11 @@ from einops import rearrange
 from torch import nn
 
 from .activation import SwiGLU
-from .attention import Attention, WindowAttention, WindowAttentionV2, MultiQueryAttention
+from .attention import Attention, WindowAttention, WindowAttentionV2, DeformableAttention, MultiQueryAttention
 from .mlp import MLP
 
-__all__ = ['TransformerBlock', 'ParallelTransformerBlock', 'SwinTransformerBlock', 'SwinTransformerBlockV2']
+__all__ = ['TransformerBlock', 'ParallelTransformerBlock', 'SwinTransformerBlock', 'SwinTransformerBlockV2',
+           'DeformableAttentionTransformerBlock']
 
 
 class TransformerBlock(nn.Module):
@@ -137,4 +138,22 @@ class SwinTransformerBlockV2(SwinTransformerBlock):
         x = self.norm1(self.shift_window_attn(x)) + x
         x = self.norm2(self.mlp(x)) + x
         x = self.norm3(x)  # main-branch norm enabled for some blocks / stages (every 6 for Huge/Giant)
+        return x
+
+
+class DeformableAttentionTransformerBlock(nn.Module):
+    def __init__(self, dim, input_resolution, num_heads, mlp_dim, drop, attn_drop, offset_kernel_size,
+                 offset_range_factor):
+        super().__init__()
+        self.attn = nn.Sequential(
+            nn.LayerNorm(dim),
+            DeformableAttention(dim, input_resolution, offset_kernel_size, offset_range_factor, num_heads, attn_drop))
+        self.mlp = nn.Sequential(
+            nn.LayerNorm(dim),
+            MLP(dim, mlp_dim, drop=drop))
+
+    def forward(self, x):
+        x = self.attn(x) + x
+        x = self.mlp(x) + x
+
         return x

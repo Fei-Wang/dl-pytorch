@@ -10,7 +10,7 @@ class PaLM(nn.Module):
         A PyTorch implement of : `PaLM: Scaling Language Modeling with Pathways
         <https://arxiv.org/abs/2204.02311>`_"""
 
-    def __init__(self, *, dim, num_tokens, depth, num_heads=8, mlp_ratio=4, drop=0., attn_drop=0.):
+    def __init__(self, *, dim, num_tokens, depth, num_heads=8, mlp_ratio=4, drop=0., attn_drop=0., **kwargs):
         super().__init__()
         self.embed = nn.Embedding(num_tokens, dim)
         self.blocks = nn.ModuleList(

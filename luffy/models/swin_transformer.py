@@ -42,7 +42,7 @@ class SwinTransformer(nn.Module):
     <https://arxiv.org/abs/2103.14030>`_"""
 
     def __init__(self, *, image_size, channels=3, patch_size=4, dim=96, depths=(2, 2, 6, 2), num_heads=(3, 6, 12, 24),
-                 mlp_ratio=4, drop=0., attn_drop=0., num_classes=1000, window_size=7, ape=False):
+                 mlp_ratio=4, drop=0., attn_drop=0., num_classes=1000, window_size=7, ape=False, **kwargs):
         super().__init__()
         image_height, image_width = _pair(image_size)
         patch_height, patch_width = _pair(patch_size)

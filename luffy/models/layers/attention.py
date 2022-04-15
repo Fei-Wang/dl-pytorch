@@ -1,12 +1,13 @@
 import torch
 import torch.nn.functional as F
-from einops import rearrange
+from einops import rearrange, repeat
+from einops.layers.torch import Rearrange
 from torch import nn, einsum
 from torch.nn.modules.utils import _pair
 
 from .mlp import MLP
 
-__all__ = ['Attention', 'WindowAttention', 'WindowAttentionV2', 'MultiQueryAttention']
+__all__ = ['Attention', 'WindowAttention', 'WindowAttentionV2', 'DeformableAttention', 'MultiQueryAttention']
 
 
 class Attention(nn.Module):
@@ -131,6 +132,101 @@ class WindowAttentionV2(nn.Module):
             sim = sim + mask
             sim = rearrange(sim, 'b nw nh n1 n2 -> (b nw) nh n1 n2')
 
+        attn = sim.softmax(dim=-1)
+        attn = self.drop(attn)
+
+        out = einsum('b h i j, b h j d -> b h i d', attn, v)
+        out = rearrange(out, 'b nh n d -> b n (nh d)')
+        return self.to_out(out)
+
+
+class DeformableAttention(nn.Module):
+    def __init__(self, dim, input_resolution, offset_kernel_size, offset_range_factor=2, num_heads=8, dim_head=None,
+                 drop=0., dim_group=128):
+        super().__init__()
+        dim_head = dim_head or dim // num_heads
+
+        self.num_heads = num_heads
+        self.scale = dim_head ** -0.5
+        inner_dim = dim_head * num_heads
+        self.h, self.w = input_resolution
+        self.dim_group = dim_group
+        self.num_groups = dim // dim_group
+        self.offset_range_factor = offset_range_factor
+
+        self.conv_offset = nn.Sequential(
+            nn.Conv2d(dim_group, dim_group, offset_kernel_size, 1, offset_kernel_size // 2, groups=dim_group),
+            Rearrange('B dg h w -> B h w dg'),
+            nn.LayerNorm(dim_group),
+            nn.GELU(),
+            nn.Linear(dim_group, 2, bias=False)
+        )
+
+        self.to_q = nn.Linear(dim, inner_dim, bias=False)
+        self.to_kv = nn.Linear(dim, inner_dim * 2, bias=False)
+
+        self.drop = nn.Dropout(drop)
+        self.to_out = nn.Sequential(nn.Linear(inner_dim, dim), nn.Dropout(drop))
+
+        self.rpe_table = nn.Parameter(torch.zeros(self.num_heads, self.h * 2 - 1, self.w * 2 - 1))
+        reference = self.get_reference(self.h, self.w)
+        self.register_buffer('reference', reference)
+
+    @staticmethod
+    def get_reference(h, w):
+        ref_y, ref_x = torch.meshgrid(
+            torch.linspace(0.5, h - 0.5, h),
+            torch.linspace(0.5, w - 0.5, w))
+
+        ref = torch.stack((ref_y, ref_x), -1)
+        ref[..., 1].div_(w).mul_(2).sub_(1)
+        ref[..., 0].div_(h).mul_(2).sub_(1)
+
+        return ref
+
+    def resample(self, x):
+        x = rearrange(x, 'b (h w) (ng dg) -> (b ng) dg h w', dg=self.dim_group, h=self.h)
+        offset = self.conv_offset(x)
+        if self.offset_range_factor > 0:
+            offset_range = torch.tensor([1.0 / self.h, 1.0 / self.w]).reshape(1, 1, 1, 2)
+            offset = offset.tanh().mul(offset_range).mul(self.offset_range_factor)
+
+        if self.offset_range_factor >= 0:
+            pos = offset + self.reference
+        else:
+            pos = (offset + self.reference).tanh()
+
+        x_sampled = F.grid_sample(
+            input=x,
+            grid=pos[..., (1, 0)],  # y, x -> x, y
+            mode='bilinear', align_corners=True)  # B, dg, h, w
+
+        x_sampled = rearrange(x_sampled, '(b ng) dg h w -> b (h w) (ng dg)', ng=self.num_groups)
+
+        rpe_bias = repeat(self.rpe_table, '(ng nhg) H W -> (b ng) nhg H W', b=x.shape[0] // self.num_groups,
+                          ng=self.num_groups)
+
+        q_grid = repeat(self.reference, 'h w p -> B (h w) 1 p', B=x.shape[0])
+        pos = rearrange(pos, 'B h w p -> B 1 (h w) p')
+        displacement = (q_grid - pos).mul(0.5)
+
+        attn_bias = F.grid_sample(
+            input=rpe_bias,
+            grid=displacement[..., (1, 0)],
+            mode='bilinear', align_corners=True
+        )  # B, nhg, L, L # L = h * w
+
+        attn_bias = rearrange(attn_bias, '(b ng) nhg L1 L2 -> b (ng nhg) L1 L2', ng=self.num_groups)
+        return x_sampled, attn_bias
+
+    def forward(self, x):
+        q = self.to_q(x)
+        x_sampled, attn_bias = self.resample(q)
+        k, v = self.to_kv(x_sampled).chunk(2, dim=-1)
+        q, k, v = map(lambda t: rearrange(t, 'b n (nh d) -> b nh n d', nh=self.num_heads), (q, k, v))
+        q = q * self.scale
+        sim = einsum('b h i d, b h j d -> b h i j', q, k)  # h means nh
+        sim = sim + attn_bias
         attn = sim.softmax(dim=-1)
         attn = self.drop(attn)
 
