@@ -63,7 +63,7 @@ class SwinTransformer(nn.Module):
         if self.ape:
             self.pos_embedding = nn.Parameter(torch.randn(1, seq_length, dim))
 
-        self.dropout = nn.Dropout(drop)
+        self.drop = nn.Dropout(drop)
 
         num_layers = len(depths)
         dims = [dim * 2 ** i for i in range(num_layers)]
@@ -85,7 +85,7 @@ class SwinTransformer(nn.Module):
         x = self.patch_embedding(x)
         if self.ape:
             x = x + self.pos_embedding
-        x = self.dropout(x)
+        x = self.drop(x)
 
         for layer in self.layers:
             x = layer(x)

@@ -59,7 +59,7 @@ class SwinTransformerV2(nn.Module):
             Rearrange('b c (h p1) (w p2) -> b (h w) (p1 p2 c)', p1=patch_height, p2=patch_width),
             nn.Linear(patch_dim, dim))
 
-        self.dropout = nn.Dropout(drop)
+        self.drop = nn.Dropout(drop)
 
         num_layers = len(depths)
         dims = [dim * 2 ** i for i in range(num_layers)]
@@ -79,7 +79,7 @@ class SwinTransformerV2(nn.Module):
 
     def forward(self, x):
         x = self.patch_embedding(x)
-        x = self.dropout(x)
+        x = self.drop(x)
 
         for layer in self.layers:
             x = layer(x)

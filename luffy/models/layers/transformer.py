@@ -1,13 +1,82 @@
 import torch
 from einops import rearrange
+from einops.layers.torch import Rearrange
 from torch import nn
 
 from .activation import SwiGLU
 from .attention import Attention, WindowAttention, WindowAttentionV2, DeformableAttention, MultiQueryAttention
 from .mlp import MLP
 
-__all__ = ['TransformerBlock', 'ParallelTransformerBlock', 'SwinTransformerBlock', 'SwinTransformerBlockV2',
-           'DeformableAttentionTransformerBlock']
+__all__ = ['MLPMixerBlock', 'PermutatorBlock', 'TransformerBlock', 'ParallelTransformerBlock', 'SwinTransformerBlock',
+           'SwinTransformerBlockV2', 'DeformableAttentionTransformerBlock']
+
+
+class MLPMixerBlock(nn.Module):
+    def __init__(self, dim, seq_len, mlp_dim1, mlp_dim2, drop):
+        super().__init__()
+        self.mlp1 = nn.Sequential(
+            nn.LayerNorm(dim),
+            Rearrange('b n d -> b d n'),
+            MLP(seq_len, mlp_dim1, drop=drop),
+            Rearrange('b d n -> b n d'))
+        self.mlp2 = nn.Sequential(
+            nn.LayerNorm(dim),
+            MLP(dim, mlp_dim2, drop=drop))
+
+    def forward(self, x):
+        x = self.mlp1(x) + x
+        x = self.mlp2(x) + x
+
+        return x
+
+
+class PermuteMLP(nn.Module):
+    def __init__(self, dim, input_resolution, segment, drop=0.):
+        super().__init__()
+        h, w = input_resolution
+        self.branch1 = nn.Sequential(
+            Rearrange('b (h w) (c s) -> b w c (h s)', h=h, s=segment),
+            nn.Linear(h * segment, h * segment),
+            Rearrange('b w c (h s) -> b (h w) (c s)', h=h, s=segment),
+        )
+        self.branch2 = nn.Sequential(
+            Rearrange('b (h w) (c s) -> b h c (w s)', h=h, s=segment),
+            nn.Linear(w * segment, w * segment),
+            Rearrange('b h c (w s) -> b (h w) (c s)', h=h, s=segment),
+        )
+        self.branch3 = nn.Linear(dim, dim)
+        self.reweight = nn.Sequential(
+            MLP(dim, dim // 4, dim * 3),
+            Rearrange('b (c p) -> b 1 c p', p=3),
+            nn.Softmax(dim=-1)
+        )
+        self.to_out = nn.Sequential(nn.Linear(dim, dim), nn.Dropout(drop))
+
+    def forward(self, x):
+        h = self.branch1(x)
+        w = self.branch2(x)
+        c = self.branch3(x)
+        weight = self.reweight((h + w + c).mean(1))
+        x = h * weight[..., 0] + w * weight[..., 1] + c * weight[..., 2]
+
+        return self.to_out(x)
+
+
+class PermutatorBlock(nn.Module):
+    def __init__(self, dim, input_resolution, segment, mlp_dim, drop):
+        super().__init__()
+        self.permute = nn.Sequential(
+            nn.LayerNorm(dim),
+            PermuteMLP(dim, input_resolution, segment, drop=drop))
+        self.mlp = nn.Sequential(
+            nn.LayerNorm(dim),
+            MLP(dim, mlp_dim, drop=drop))
+
+    def forward(self, x):
+        x = self.permute(x) + x
+        x = self.mlp(x) + x
+
+        return x
 
 
 class TransformerBlock(nn.Module):
